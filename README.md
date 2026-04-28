@@ -6,7 +6,7 @@ Sistema embarcado utilizando Arduino para detecção de gás com indicação vis
 
 ## 📸 Demonstração do Projeto
 
-![Protótipo Arduino](./imagem-do-projeto.jpg)
+![Protótipo Arduino](./arduino.jpg)
 
 ---
 
