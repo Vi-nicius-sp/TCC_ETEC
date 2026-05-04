@@ -1,6 +1,6 @@
-# 🚨 M.A.B. — Monitoramento de Ambiente com Gás
+# 🚨 M.A.B. — Monitor de Adulteração em Bebidas
 
-Sistema embarcado utilizando Arduino para detecção de gás com indicação visual por LEDs.
+Sistema embarcado utilizando Arduino para detecção de possíveis adulterações em bebidas alcoólicas através da análise de vapores.
 
 ---
 
@@ -12,52 +12,54 @@ Sistema embarcado utilizando Arduino para detecção de gás com indicação vis
 
 ## 📖 Sobre o Projeto
 
-O **M.A.B. (Monitoramento de Ambiente Básico)** é um sistema embarcado desenvolvido para detectar a presença de gás em ambientes, utilizando um sensor analógico conectado ao Arduino.
+O **M.A.B. (Monitor de Adulteração em Bebidas)** é um sistema embarcado desenvolvido com Arduino que analisa vapores alcoólicos para identificar possíveis anomalias associadas à adulteração de bebidas.
 
-O sistema realiza leituras contínuas, aplica média para maior precisão e informa o estado do ambiente através de LEDs.
+O sistema realiza leituras contínuas do sensor de gás, aplica média para maior estabilidade e utiliza um método de **calibração automática** para aumentar a confiabilidade da detecção.
 
 ---
 
 ## ⚙️ Funcionalidades
 
-- 🔘 Botão liga/desliga (modo toggle)
-- ⏳ Tempo de aquecimento do sensor (15 minutos)
-- 📊 Leitura com média de 50 amostras
-- 💡 Indicação visual por LEDs
-- 🖥️ Saída no monitor serial (debug)
+* 🔘 Botão liga/desliga (modo toggle)
+* ⏳ Tempo de aquecimento do sensor (~15 minutos)
+* 📊 Leitura com média de 50 amostras
+* 🧠 Calibração automática do ambiente (baseline)
+* 🚨 Detecção baseada em limite dinâmico
+* 💡 Indicação visual com LED único
+* 🖥️ Saída no monitor serial (debug)
 
 ---
 
 ## 🚦 Estados do Sistema
 
-| Estado            | LED              | Descrição                     |
-|------------------|------------------|------------------------------|
-| 🟡 Aquecendo     | Vermelho + Verde | Sensor estabilizando         |
-| 🟢 Seguro        | Verde            | Ambiente sem gás             |
-| 🔴 Gás Detectado | Vermelho         | Presença de gás identificada |
+| Estado        | LED     | Descrição                        |
+| ------------- | ------- | -------------------------------- |
+| 🔴 Desligado  | Apagado | Sistema inativo                  |
+| 🟡 Aquecendo  | Apagado | Sensor estabilizando             |
+| 🔵 Calibrando | Apagado | Definindo valor base do ambiente |
+| 🟢 Normal     | Apagado | Comportamento esperado           |
+| 🚨 Suspeito   | Aceso   | Possível adulteração detectada   |
 
 ---
 
 ## 🔌 Componentes Utilizados
 
-- Arduino Uno (ou similar)
-- Sensor de gás (MQ-2 / MQ-135)
-- Botão push-button
-- LED vermelho
-- LED verde
-- Resistores
-- Jumpers
+* Arduino Uno (ou similar)
+* Sensor de gás (MQ-3 recomendado)
+* Botão push-button
+* LED
+* Resistores
+* Jumpers
 
 ---
 
 ## 🔌 Pinagem
 
-| Componente     | Pino |
-|---------------|------|
+| Componente    | Pino |
+| ------------- | ---- |
 | Sensor de gás | A0   |
 | Botão Power   | 3    |
-| LED Vermelho  | 5    |
-| LED Verde     | 4    |
+| LED           | 5    |
 
 ---
 
@@ -65,10 +67,27 @@ O sistema realiza leituras contínuas, aplica média para maior precisão e info
 
 1. O sistema inicia desligado.
 2. O botão alterna o estado (liga/desliga).
-3. Ao ligar, inicia o tempo de aquecimento.
-4. Após estabilização, realiza leituras do sensor.
-5. Calcula média de 50 amostras.
-6. Detecta presença de gás com base no valor médio.
+3. Ao ligar, inicia o aquecimento do sensor.
+4. Após estabilização:
+
+   * o sistema coleta dados do ambiente
+   * define automaticamente um **baseline**
+5. O limite de detecção é calculado como:
+
+```
+limite = baseline * 1.5
+```
+
+6. É aplicado um valor mínimo de segurança:
+
+```
+limite mínimo = 420
+```
+
+7. Durante o funcionamento:
+
+   * LED apagado → normal
+   * LED aceso → possível adulteração
 
 ---
 
@@ -76,11 +95,12 @@ O sistema realiza leituras contínuas, aplica média para maior precisão e info
 
 O sistema implementa:
 
-- Controle de estado com botão (toggle)
-- Temporização com `millis()`
-- Média de 50 leituras analógicas
-- Lógica de detecção por limiar
-- Controle de LEDs por estado
+* Controle de estado com botão (toggle)
+* Temporização com `millis()`
+* Média de 50 leituras analógicas
+* Calibração automática do sensor
+* Lógica de detecção com limite dinâmico
+* Controle de LED como saída de alerta
 
 ---
 
@@ -89,8 +109,34 @@ O sistema implementa:
 Para testes rápidos, reduza o tempo de aquecimento:
 
 ```cpp
-// Original (15 minutos)
+// Original (~15 minutos)
 900000
 
 // Teste rápido
 900
+```
+
+---
+
+## ⚠️ Limitações
+
+* O sistema **não identifica substâncias específicas**
+* Detecta apenas **variações em vapores alcoólicos**
+* Pode sofrer influência de:
+
+  * temperatura
+  * umidade
+  * ventilação do ambiente
+
+---
+
+## 🧠 Considerações Técnicas
+
+Sensores da família MQ apresentam variação entre unidades e condições ambientais.
+Por isso, foi adotada uma abordagem de **calibração automática com baseline**, aumentando a confiabilidade da detecção sem necessidade de ajuste manual.
+
+---
+
+## 👨‍💻 Autor
+
+**Vinicius Pereira de Araujo**

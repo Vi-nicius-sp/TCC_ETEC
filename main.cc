@@ -1,81 +1,72 @@
 // ======================================================
-// PROJETO: M.A.B.
+// PROJETO: M.A.B. (Monitor de Adulteração em Bebidas)
 // Programador: Vinicius Pereira de Araujo
 // ======================================================
-// DESCRIÇÃO:
-// Sistema embarcado que detecta presença de gás utilizando
-// sensor analógico.
 //
-// FUNCIONALIDADES:
-// - Botão liga/desliga (modo toggle)
-// - Tempo de aquecimento do sensor (15 minutos)
-// - Leitura com média (50 amostras)
-// - Indicação visual por LEDs
+// DESCRIÇÃO:
+// Sistema embarcado que detecta possíveis anomalias
+// (adulteração) em bebidas alcoólicas através da leitura
+// de vapores utilizando um sensor de gás.
+//
+// FUNCIONAMENTO:
+// 1. Usuário liga o sistema (botão)
+// 2. Sensor entra em aquecimento (15 minutos)
+// 3. Após aquecer:
+//    → sistema realiza leitura do ambiente (baseline)
+//    → define automaticamente um limite de detecção
+// 4. A partir disso:
+//    → LED desligado = normal
+//    → LED ligado = suspeita de adulteração
 //
 // ESTADOS DO SISTEMA:
-//  Aquecendo -> amarelo
-//	Seguro -> verde
-//	Gás detectado -> vermelho
+//  - Desligado → LED apagado
+//  - Aquecendo → aguardando estabilização
+//  - Calibrando → definição do baseline
+//  - Monitorando → detecção ativa
+//
 // ======================================================
 
 
 // ---------------- PINOS ----------------
 
-// Pino analógico do sensor de gás
-int sensorPin = A0;
-
-// Botão liga/desliga
-int botaoPower = 3;
-
-// LEDs
-int ledVermelho = 5;   //indica gás detectado
-int ledVerde = 4;      //indica ambiente seguro
+int sensorPin = A0;   // Sensor de gás
+int botaoPower = 3;   // Botão liga/desliga
+int led = 5;          // LED indicador
 
 
 // ---------------- CONTROLE DO SISTEMA ----------------
 
-// Indica se o sistema está ligado ou desligado
 bool sistemaLigado = false;
-
-// Guarda o estado anterior do botão (para detectar clique)
 bool ultimoEstadoBotao = false;
 
 
 // ---------------- CONTROLE DE TEMPO ----------------
 
-// Guarda o momento em que o sistema foi ligado
 unsigned long tempoInicio = 0;
-
-// Indica se o sensor já está pronto (aquecido)
 bool sensorPronto = false;
 
 
 // ---------------- LEITURA DO SENSOR ----------------
 
-// Soma das leituras para cálculo de média
 float soma = 0;
-
-// Contador de leituras realizadas
 int contagem = 0;
-
-// Resultado da média
 float media = 0;
+
+
+// ---------------- CALIBRAÇÃO AUTOMÁTICA ----------------
+
+bool calibrado = false;
+float baseline = 0;
+float limite = 420; // valor mínimo de segurança
 
 
 // ======================================================
 void setup() {
 
-  // Define o sensor como entrada
   pinMode(sensorPin, INPUT);
-
-  // Define o botão como entrada
   pinMode(botaoPower, INPUT);
+  pinMode(led, OUTPUT);
 
-  // Define LEDs como saída
-  pinMode(ledVermelho, OUTPUT);
-  pinMode(ledVerde, OUTPUT);
-
-  // Inicializa monitor serial (para testes)
   Serial.begin(9600);
 }
 
@@ -83,29 +74,18 @@ void setup() {
 // ======================================================
 void loop() {
 
-  // ==================================================
-  //  1. BOTÃO LIGA/DESLIGA (TOGGLE)
-  // ==================================================
-
-  // Lê o estado atual do botão
+  // ================= BOTÃO =================
   bool estadoBotao = digitalRead(botaoPower);
 
-  // Detecta apenas o momento do clique (LOW → HIGH)
   if (estadoBotao == HIGH && ultimoEstadoBotao == LOW) {
 
-    // Inverte estado do sistema
     sistemaLigado = !sistemaLigado;
 
-    // Se ligou o sistema
     if (sistemaLigado) {
-
-      // Marca o tempo inicial
       tempoInicio = millis();
-
-      // Sensor começa como não pronto
       sensorPronto = false;
+      calibrado = false;
 
-      // Zera leituras anteriores
       soma = 0;
       contagem = 0;
 
@@ -113,95 +93,73 @@ void loop() {
 
     } else {
       Serial.println("Sistema DESLIGADO");
+      digitalWrite(led, LOW);
     }
   }
 
-  // Atualiza estado anterior do botão
   ultimoEstadoBotao = estadoBotao;
 
-
-  // ==================================================
-  //  2. SISTEMA DESLIGADO
-  // ==================================================
-  if (!sistemaLigado) {
-
-    // Garante que tudo está desligado
-    digitalWrite(ledVermelho, LOW);
-    digitalWrite(ledVerde, LOW);
-
-    return; // Sai do loop
-  }
+  if (!sistemaLigado) return;
 
 
-  // ==================================================
-  //  3. TEMPO DE AQUECIMENTO
-  // ==================================================
-  // Sensores de gás precisam de tempo para estabilizar
-
+  // ================= AQUECIMENTO =================
   if (!sensorPronto) {
 
-    // 15 minutos = 900000 milissegundos
-    if (millis() - tempoInicio >= 900000) { // para teste alterar para 900
+    if (millis() - tempoInicio >= 900000) {
       sensorPronto = true;
-
       Serial.println("Sensor pronto!");
     }
+
+    return;
   }
 
 
-  // ==================================================
-  //  4. AQUECENDO
-  // ==================================================
-  if (!sensorPronto) {
-
-    // Amarelo = vermelho + verde ligados juntos
-    digitalWrite(ledVermelho, HIGH);
-    digitalWrite(ledVerde, HIGH);
-
-    return; // Não continua para leitura
-  }
-
-
-  // ==================================================
-  //  5. LEITURA DO SENSOR
-  // ==================================================
-
-  // Lê o valor do sensor e soma
+  // ================= LEITURA =================
   soma += analogRead(sensorPin);
-
-  // Conta quantas leituras já foram feitas
   contagem++;
 
-  // Quando atingir 50 leituras
   if (contagem >= 50) {
 
-    // Calcula média
     media = soma / 50.0;
 
-    // Mostra no serial (para debug)
     Serial.print("Media: ");
     Serial.println(media);
 
-    // Reseta valores
     soma = 0;
     contagem = 0;
 
 
-    // ==================================================
-    //  6. DETECÇÃO DE GÁS
-    // ==================================================
+    // ================= CALIBRAÇÃO =================
+    if (!calibrado) {
 
-    if (media >= 500) {
+      baseline = media;
+      limite = baseline * 1.5;
 
-      //  GÁS DETECTADO
-      digitalWrite(ledVermelho, HIGH);
-      digitalWrite(ledVerde, LOW);
+      if (limite < 420) {
+        limite = 420;
+      }
+
+      calibrado = true;
+
+      Serial.print("Baseline: ");
+      Serial.println(baseline);
+
+      Serial.print("Limite: ");
+      Serial.println(limite);
+
+      return;
+    }
+
+
+    // ================= DETECÇÃO =================
+    if (media >= limite) {
+
+      digitalWrite(led, HIGH);
+      Serial.println("ALERTA: POSSIVEL ADULTERACAO");
 
     } else {
 
-      //  AMBIENTE SEGURO
-      digitalWrite(ledVermelho, LOW);
-      digitalWrite(ledVerde, HIGH);
+      digitalWrite(led, LOW);
     }
   }
 }
