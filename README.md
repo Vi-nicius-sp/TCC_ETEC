@@ -34,11 +34,11 @@ O sistema realiza leituras contínuas do sensor de gás, aplica média para maio
 
 | Estado        | LED     | Descrição                        |
 | ------------- | ------- | -------------------------------- |
-| 🔴 Desligado  | Apagado | Sistema inativo                  |
-| 🟡 Aquecendo  | Apagado | Sensor estabilizando             |
+| 🔴 Suspeito   | Aceso   | Possível adulteração detectada   |   
+| 🟡 Aquecendo  | Aceso   | Sensor estabilizando             |
 | 🔵 Calibrando | Apagado | Definindo valor base do ambiente |
-| 🟢 Normal     | Apagado | Comportamento esperado           |
-| 🚨 Suspeito   | Aceso   | Possível adulteração detectada   |
+| 🟢 Normal     | Aceso   | Comportamento esperado           |
+| 
 
 ---
 
