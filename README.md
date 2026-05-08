@@ -12,54 +12,52 @@ Sistema embarcado utilizando Arduino para detecção de possíveis adulteraçõe
 
 ## 📖 Sobre o Projeto
 
-O **M.A.B. (Monitor de Adulteração em Bebidas)** é um sistema embarcado desenvolvido com Arduino que analisa vapores alcoólicos para identificar possíveis anomalias associadas à adulteração de bebidas.
+O **M.A.B. (Monitor de Adulteração em Bebidas)** é um sistema embarcado desenvolvido com Arduino que analisa vapores alcoólicos utilizando um sensor de gás para identificar possíveis variações associadas à adulteração de bebidas.
 
-O sistema realiza leituras contínuas do sensor de gás, aplica média para maior estabilidade e utiliza um método de **calibração automática** para aumentar a confiabilidade da detecção.
+O sistema realiza leituras contínuas, aplica média para reduzir ruído e utiliza um **baseline fixo com tolerância configurável** para detecção de anomalias.
 
 ---
 
 ## ⚙️ Funcionalidades
 
-* 🔘 Botão liga/desliga (modo toggle)
-* ⏳ Tempo de aquecimento do sensor (~15 minutos)
-* 📊 Leitura com média de 50 amostras
-* 🧠 Calibração automática do ambiente (baseline)
-* 🚨 Detecção baseada em limite dinâmico
-* 💡 Indicação visual com LED único
-* 🖥️ Saída no monitor serial (debug)
+- 🔘 Botão liga/desliga (modo toggle)
+- ⏳ Tempo de aquecimento do sensor (~15 minutos recomendado)
+- 📊 Leitura com média de 50 amostras
+- 📏 Baseline fixo para referência
+- 🎯 Detecção baseada em tolerância configurável
+- 💡 Indicação visual por LED
+- 🖥️ Saída no monitor serial (debug)
 
 ---
 
 ## 🚦 Estados do Sistema
 
-| Estado        | LED     | Descrição                        |
-| ------------- | ------- | -------------------------------- |
-| 🔴 Suspeito   | Aceso   | Possível adulteração detectada   |   
-| 🟡 Aquecendo  | Aceso   | Sensor estabilizando             |
-| 🔵 Calibrando | Apagado | Definindo valor base do ambiente |
-| 🟢 Normal     | Aceso   | Comportamento esperado           |
-| 
+| Estado       | LED    | Descrição                      |
+|--------------|--------|--------------------------------|
+| 🟢 Normal     | Aceso  | Bebida dentro do padrão        |
+| 🔴 Suspeito   | Aceso  | Possível adulteração detectada |
+| 🟡 Aquecendo  | Aceso  | Sensor em estabilização        |
 
 ---
 
 ## 🔌 Componentes Utilizados
 
-* Arduino Uno (ou similar)
-* Sensor de gás (MQ-3 recomendado)
-* Botão push-button
-* LED
-* Resistores
-* Jumpers
+- Arduino Uno (ou compatível)
+- Sensor de gás (MQ-3 recomendado)
+- Botão push-button
+- LED
+- Resistores
+- Jumpers
 
 ---
 
 ## 🔌 Pinagem
 
-| Componente    | Pino |
-| ------------- | ---- |
-| Sensor de gás | A0   |
-| Botão Power   | 3    |
-| LED           | 5    |
+| Componente     | Pino |
+|----------------|------|
+| Sensor de gás  | A0   |
+| Botão Power    | 3    |
+| LED            | 5    |
 
 ---
 
@@ -67,76 +65,11 @@ O sistema realiza leituras contínuas do sensor de gás, aplica média para maio
 
 1. O sistema inicia desligado.
 2. O botão alterna o estado (liga/desliga).
-3. Ao ligar, inicia o aquecimento do sensor.
-4. Após estabilização:
-
-   * o sistema coleta dados do ambiente
-   * define automaticamente um **baseline**
-5. O limite de detecção é calculado como:
-
-```
-limite = baseline * 1.5
-```
-
-6. É aplicado um valor mínimo de segurança:
-
-```
-limite mínimo = 420
-```
-
-7. Durante o funcionamento:
-
-   * LED apagado → normal
-   * LED aceso → possível adulteração
-
----
-
-## 💻 Código
-
-O sistema implementa:
-
-* Controle de estado com botão (toggle)
-* Temporização com `millis()`
-* Média de 50 leituras analógicas
-* Calibração automática do sensor
-* Lógica de detecção com limite dinâmico
-* Controle de LED como saída de alerta
-
----
-
-## 🧪 Ajuste para Testes
-
-Para testes rápidos, reduza o tempo de aquecimento:
+3. Ao ligar, o sensor passa por aquecimento.
+4. Após estabilização, inicia coleta de dados.
+5. São realizadas 50 leituras e calculada a média.
+6. A média é comparada com um **baseline fixo**.
+7. A detecção ocorre pela diferença absoluta:
 
 ```cpp
-// Original (~15 minutos)
-900000
-
-// Teste rápido
-900
-```
-
----
-
-## ⚠️ Limitações
-
-* O sistema **não identifica substâncias específicas**
-* Detecta apenas **variações em vapores alcoólicos**
-* Pode sofrer influência de:
-
-  * temperatura
-  * umidade
-  * ventilação do ambiente
-
----
-
-## 🧠 Considerações Técnicas
-
-Sensores da família MQ apresentam variação entre unidades e condições ambientais.
-Por isso, foi adotada uma abordagem de **calibração automática com baseline**, aumentando a confiabilidade da detecção sem necessidade de ajuste manual.
-
----
-
-## 👨‍💻 Autor
-
-**Vinicius Pereira de Araujo**
+diferença = abs(media - baseline);
