@@ -1,299 +1,486 @@
 // ======================================================
 // PROJETO: M.A.B.
-// Programador: Vinicius Pereira de Araujo
+// Monitor Analítico de Bebidas
 // ======================================================
 //
 // DESCRIÇÃO:
-// Sistema embarcado que detecta presença de gás utilizando
-// sensor analógico.
+// Sistema embarcado utilizando sensor MQ-3 para detectar
+// possíveis alterações em amostras através de análise
+// comparativa.
 //
-// FUNCIONALIDADES:
-// - Botão liga/desliga (modo toggle)
-// - Tempo de aquecimento do sensor (15 minutos)
-// - Leitura com média (50 amostras)
-// - Sistema de baseline
-// - Tolerância estatística
-// - Indicação visual por LEDs
-//
-// LÓGICA DO PROJETO:
-// O sistema compara a média atual do sensor com um
-// baseline previamente definido.
-//
-// Se a diferença ultrapassar uma tolerância,
-// o sistema considera a amostra suspeita.
-//
-// FORMULA:
-//
-// abs(media - baseline) > tolerancia
-//
-// Onde:
-// media    -> valor médio do sensor
-// baseline -> referência da bebida original
-// tolerancia -> variação aceitável
-//
-// ESTADOS DO SISTEMA:
-// - Aquecendo  -> LED amarelo
-// - Normal     -> LED verde
-// - Suspeito   -> LED vermelho
 // ======================================================
-// ---------------- PINOS ----------------
-
-// Pino analógico do sensor de gás (MQ-3)
-int sensorPin = A0;
-
-// Botão liga/desliga do sistema
-int botaoPower = 3;
-
-// LEDs de indicação de estado
-int ledVermelho = 5;   // indica alteração detectada
-int ledVerde = 4;      // indica ambiente normal
-
-
-// ---------------- BASELINE ----------------
+// FUNCIONALIDADES
+// ======================================================
 //
-// baseline:
-// Valor médio esperado da bebida original.
+// - Botão liga/desliga (toggle)
+// - Debounce profissional sem delay()
+// - Aquecimento controlado com millis()
+// - Baseline automático
+// - Média de múltiplas amostras
+// - Histerese anti-oscilação
+// - LEDs de status
+// - Código modularizado
+// - Sem bloqueios críticos
 //
-// tolerancia:
-// Variação aceitável em relação ao baseline.
+// ======================================================
+// ESTADOS
+// ======================================================
 //
-// Quanto menor a tolerância:
-// - mais sensível
-// - mais falso positivo
+// DESLIGADO  -> LEDs apagados
+// AQUECENDO  -> LED amarelo
+// NORMAL     -> LED verde
+// ALERTA     -> LED vermelho
 //
-// Quanto maior:
-// - menos sensível
-// - mais estável
-//
-float baseline = 520.0;
-float tolerancia = 40.0;
+// ======================================================
 
 
-// ---------------- ESTADOS DO SISTEMA ----------------
 
-// Controla se o sistema está ligado ou desligado
+// ======================================================
+// PINOS
+// ======================================================
+
+const byte sensorPin = A0;
+
+const byte botaoPower = 3;
+
+const byte ledVerde = 4;
+const byte ledVermelho = 5;
+const byte ledAmarelo = 7;
+
+
+
+// ======================================================
+// CONFIGURAÇÕES
+// ======================================================
+
+// ======================================================
+// TEMPO DE AQUECIMENTO
+// ======================================================
+
+// TESTE RÁPIDO:
+// const unsigned long tempoAquecimento = 3000;
+
+// USO REAL:
+const unsigned long tempoAquecimento = 15UL * 60UL * 1000UL;
+
+
+// ======================================================
+// SENSOR
+// ======================================================
+
+const int totalAmostras = 50;
+
+// margem para detectar alteração
+float toleranciaAlerta = 40.0;
+
+// margem para voltar ao normal
+float toleranciaNormal = 30.0;
+
+
+// ======================================================
+// DEBOUNCE
+// ======================================================
+
+const unsigned long debounceDelay = 50;
+
+
+// ======================================================
+// INTERVALO ENTRE LEITURAS
+// ======================================================
+
+const unsigned long intervaloLeitura = 10;
+
+
+
+// ======================================================
+// VARIÁVEIS DE CONTROLE
+// ======================================================
+
 bool sistemaLigado = false;
-
-// Guarda o estado anterior do botão (para detectar clique)
-bool ultimoEstadoBotao = HIGH;
-
-// Controla mudança de status para evitar spam no Serial
-bool ultimoStatus = false;
-
-// Indica se o sensor já passou pelo aquecimento
 bool sensorPronto = false;
 
+bool estadoAlertaAtivo = false;
 
-// ---------------- LEITURA DO SENSOR ----------------
-
-// Soma das leituras do sensor
-float soma = 0;
-
-// Contador de amostras
-int contagem = 0;
-
-// Média das leituras
-float media = 0;
-
-// Diferença entre média e baseline
-float diferenca = 0;
 
 
 // ======================================================
-// RESET DAS LEITURAS
+// CONTROLE DO BOTÃO
 // ======================================================
-//
-// Função responsável por limpar os valores
-// após cada ciclo de leitura do sensor.
-//
-void resetLeitura() {
-  soma = 0;
-  contagem = 0;
-  media = 0;
-  diferenca = 0;
-}
+
+bool estadoBotaoAtual = HIGH;
+bool ultimoEstadoBotao = HIGH;
+
+unsigned long ultimoDebounce = 0;
+
 
 
 // ======================================================
-// SETUP (INICIALIZAÇÃO)
+// CONTROLE DE TEMPO
 // ======================================================
+
+unsigned long tempoLigado = 0;
+unsigned long ultimaLeitura = 0;
+
+
+
+// ======================================================
+// LEITURA SENSOR
+// ======================================================
+
+long somaLeituras = 0;
+
+int contadorLeituras = 0;
+
+float baseline = 0;
+
+
+
+// ======================================================
+// SETUP
+// ======================================================
+
 void setup() {
 
-  // Configuração dos pinos
-  pinMode(sensorPin, INPUT);
-  pinMode(botaoPower, INPUT_PULLUP);
-
-  pinMode(ledVermelho, OUTPUT);
-  pinMode(ledVerde, OUTPUT);
-
-  // Comunicação serial
   Serial.begin(9600);
 
-  // ==================================================
-  // ESTADO INICIAL FORÇADO (IMPORTANTE)
-  // ==================================================
-  // Garante que o sistema sempre inicia desligado
-  sistemaLigado = false;
-  sensorPronto = false;
+  // ======================================================
+  // PINOS
+  // ======================================================
 
-  // LEDs desligados no início
-  digitalWrite(ledVermelho, LOW);
-  digitalWrite(ledVerde, LOW);
+  pinMode(botaoPower, INPUT_PULLUP);
 
-  // Pequeno delay para estabilizar leitura do botão
-  delay(100);
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledVermelho, OUTPUT);
+  pinMode(ledAmarelo, OUTPUT);
 
-  // Descarta leitura inicial do botão (evita falso clique)
-  ultimoEstadoBotao = digitalRead(botaoPower);
+  desligarTodosLEDs();
 
-  Serial.println("Sistema iniciado (DESLIGADO)");
+  // ======================================================
+  // SERIAL
+  // ======================================================
+
+  Serial.println("====================================");
+  Serial.println(" SISTEMA M.A.B INICIADO ");
+  Serial.println(" ESTADO: DESLIGADO ");
+  Serial.println("====================================");
 }
+
 
 
 // ======================================================
 // LOOP PRINCIPAL
 // ======================================================
+
 void loop() {
 
-  // ==================================================
-  // 1. BOTÃO (TOGGLE ESTÁVEL)
-  // ==================================================
-  //
-  // Detecta apenas transição real do botão:
-  // HIGH → LOW (clique real)
-  //
+  verificarBotao();
 
-  bool estadoBotao = digitalRead(botaoPower);
-
-  if (ultimoEstadoBotao == HIGH && estadoBotao == LOW) {
-
-    // Alterna estado do sistema
-    sistemaLigado = !sistemaLigado;
-
-    if (sistemaLigado) {
-
-      Serial.println(">>> SISTEMA LIGADO");
-
-      sensorPronto = false;
-      resetLeitura();
-    }
-    else {
-
-      Serial.println(">>> SISTEMA DESLIGADO");
-
-      sensorPronto = false;
-      resetLeitura();
-
-      // Garante LEDs desligados
-      digitalWrite(ledVermelho, LOW);
-      digitalWrite(ledVerde, LOW);
-    }
-
-    delay(200); // debounce simples
-  }
-
-  ultimoEstadoBotao = estadoBotao;
-
-
-  // ==================================================
-  // 2. STATUS (SEM SPAM NO SERIAL)
-  // ==================================================
-  if (sistemaLigado != ultimoStatus) {
-
-    if (sistemaLigado)
-      Serial.println("STATUS: LIGADO");
-    else
-      Serial.println("STATUS: DESLIGADO");
-
-    ultimoStatus = sistemaLigado;
-  }
-
-
-  // ==================================================
-  // 3. SISTEMA DESLIGADO
-  // ==================================================
   if (!sistemaLigado) {
-
-    digitalWrite(ledVermelho, LOW);
-    digitalWrite(ledVerde, LOW);
-
     return;
   }
 
-
-  // ==================================================
-  // 4. AQUECIMENTO DO SENSOR
-  // ==================================================
-  //
-  // Sensores MQ-3 precisam de tempo para estabilizar
-  //
+  verificarAquecimento();
 
   if (!sensorPronto) {
+    return;
+  }
 
-    // LED amarelo (vermelho + verde)
-    digitalWrite(ledVermelho, HIGH);
-    digitalWrite(ledVerde, HIGH);
+  processarSensor();
+}
 
-    // Tempo de aquecimento (teste: 30s)
-    if (millis() > 30000) {
-      sensorPronto = true;
-      Serial.println("Sensor pronto!");
+
+
+// ======================================================
+// BOTÃO POWER
+// ======================================================
+
+void verificarBotao() {
+
+  bool leitura = digitalRead(botaoPower);
+
+  // detecta mudança física
+  if (leitura != ultimoEstadoBotao) {
+
+    ultimoDebounce = millis();
+  }
+
+  // debounce
+  if ((millis() - ultimoDebounce) > debounceDelay) {
+
+    // mudança confirmada
+    if (leitura != estadoBotaoAtual) {
+
+      estadoBotaoAtual = leitura;
+
+      // botão pressionado
+      if (estadoBotaoAtual == LOW) {
+
+        sistemaLigado = !sistemaLigado;
+
+        if (sistemaLigado) {
+          ligarSistema();
+        }
+        else {
+          desligarSistema();
+        }
+      }
     }
+  }
+
+  ultimoEstadoBotao = leitura;
+}
+
+
+
+// ======================================================
+// LIGAR SISTEMA
+// ======================================================
+
+void ligarSistema() {
+
+  Serial.println("");
+  Serial.println(">>> SISTEMA LIGADO");
+  Serial.println("Sensor aquecendo...");
+
+  sensorPronto = false;
+
+  estadoAlertaAtivo = false;
+
+  tempoLigado = millis();
+
+  resetLeituras();
+
+  desligarTodosLEDs();
+
+  digitalWrite(ledAmarelo, HIGH);
+}
+
+
+
+// ======================================================
+// DESLIGAR SISTEMA
+// ======================================================
+
+void desligarSistema() {
+
+  Serial.println("");
+  Serial.println(">>> SISTEMA DESLIGADO");
+
+  sensorPronto = false;
+
+  estadoAlertaAtivo = false;
+
+  resetLeituras();
+
+  desligarTodosLEDs();
+}
+
+
+
+// ======================================================
+// AQUECIMENTO
+// ======================================================
+
+void verificarAquecimento() {
+
+  if (sensorPronto) {
+    return;
+  }
+
+  unsigned long tempoAtual = millis();
+
+  if ((tempoAtual - tempoLigado) >= tempoAquecimento) {
+
+    sensorPronto = true;
+
+    digitalWrite(ledAmarelo, LOW);
+
+    Serial.println("");
+    Serial.println("Sensor estabilizado!");
+    Serial.println("Realizando calibracao...");
+    
+    calibrarBaseline();
+
+    Serial.println("Analise iniciada.");
+  }
+}
+
+
+
+// ======================================================
+// CALIBRAÇÃO AUTOMÁTICA
+// ======================================================
+
+void calibrarBaseline() {
+
+  long soma = 0;
+
+  for (int i = 0; i < 100; i++) {
+
+    soma += analogRead(sensorPin);
+
+    delay(20);
+  }
+
+  baseline = soma / 100.0;
+
+  Serial.print("Baseline definido: ");
+  Serial.println(baseline);
+}
+
+
+
+// ======================================================
+// PROCESSAMENTO DO SENSOR
+// ======================================================
+
+void processarSensor() {
+
+  // controle de tempo sem delay
+  if (millis() - ultimaLeitura < intervaloLeitura) {
+    return;
+  }
+
+  ultimaLeitura = millis();
+
+  int leitura = analogRead(sensorPin);
+
+  somaLeituras += leitura;
+
+  contadorLeituras++;
+
+  // debug opcional
+  // Serial.println(leitura);
+
+  // ======================================================
+  // PROCESSA MÉDIA
+  // ======================================================
+
+  if (contadorLeituras >= totalAmostras) {
+
+    float media = somaLeituras / (float)totalAmostras;
+
+    float diferenca = abs(media - baseline);
+
+    Serial.println("");
+    Serial.print("Media: ");
+    Serial.println(media);
+
+    Serial.print("Diferenca: ");
+    Serial.println(diferenca);
+
+    analisarResultado(diferenca);
+
+    resetLeituras();
+  }
+}
+
+
+
+// ======================================================
+// ANÁLISE
+// ======================================================
+
+void analisarResultado(float diferenca) {
+
+  // ======================================================
+  // ENTRA EM ALERTA
+  // ======================================================
+
+  if (!estadoAlertaAtivo && diferenca > toleranciaAlerta) {
+
+    estadoAlertaAtivo = true;
+
+    estadoAlerta();
 
     return;
   }
 
+  // ======================================================
+  // VOLTA AO NORMAL
+  // ======================================================
 
-  // ==================================================
-  // 5. LEITURA DO SENSOR
-  // ==================================================
-  //
-  // Faz média de 50 leituras para reduzir ruído
-  //
+  if (estadoAlertaAtivo && diferenca < toleranciaNormal) {
 
-  soma += analogRead(sensorPin);
-  contagem++;
+    estadoAlertaAtivo = false;
 
+    estadoNormal();
 
-  // ==================================================
-  // 6. PROCESSAMENTO
-  // ==================================================
-  //
-  // Quando completa 50 amostras, calcula média
-  //
-
-  if (contagem >= 50) {
-
-    media = soma / 50.0;
-
-    // Diferença em relação ao baseline
-    diferenca = abs(media - baseline);
-
-    // Reseta ciclo de leitura
-    resetLeitura();
-
-
-    // ==================================================
-    // DETECÇÃO DE ALTERAÇÃO
-    // ==================================================
-    //
-    // Se a diferença for maior que tolerância,
-    // considera possível adulteração
-    //
-
-    if (diferenca > tolerancia) {
-
-      digitalWrite(ledVermelho, HIGH);
-      digitalWrite(ledVerde, LOW);
-
-      Serial.println("ALERTA: POSSIVEL ALTERACAO");
-    }
-    else {
-
-      digitalWrite(ledVermelho, LOW);
-      digitalWrite(ledVerde, HIGH);
-
-      Serial.println("AMOSTRA NORMAL");
-    }
+    return;
   }
+
+  // ======================================================
+  // MANTÉM ESTADO
+  // ======================================================
+
+  if (estadoAlertaAtivo) {
+
+    estadoAlerta();
+  }
+  else {
+
+    estadoNormal();
+  }
+}
+
+
+
+// ======================================================
+// ESTADO NORMAL
+// ======================================================
+
+void estadoNormal() {
+
+  digitalWrite(ledVerde, HIGH);
+
+  digitalWrite(ledVermelho, LOW);
+
+  digitalWrite(ledAmarelo, LOW);
+
+  Serial.println("STATUS: NORMAL");
+}
+
+
+
+// ======================================================
+// ESTADO ALERTA
+// ======================================================
+
+void estadoAlerta() {
+
+  digitalWrite(ledVerde, LOW);
+
+  digitalWrite(ledVermelho, HIGH);
+
+  digitalWrite(ledAmarelo, LOW);
+
+  Serial.println("STATUS: POSSIVEL ALTERACAO");
+}
+
+
+
+// ======================================================
+// RESET LEITURAS
+// ======================================================
+
+void resetLeituras() {
+
+  somaLeituras = 0;
+
+  contadorLeituras = 0;
+}
+
+
+
+// ======================================================
+// DESLIGA LEDs
+// ======================================================
+
+void desligarTodosLEDs() {
+
+  digitalWrite(ledVerde, LOW);
+
+  digitalWrite(ledVermelho, LOW);
+
+  digitalWrite(ledAmarelo, LOW);
 }
